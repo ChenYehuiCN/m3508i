@@ -45,7 +45,7 @@ struct m3508i_cmd {
 
 表达式：
 ```
-data = (uint16_t)((16384 + lroundf(speed_rpm * (8191.0f / 1000.0f))) % 16384)
+data = (uint16_t)((16384 + (int)lroundf(speed_rpm * (8191.0f / 1000.0f))) % 16384);
 ```
 
 - **enable == true**：按上述公式计算 `data`。
