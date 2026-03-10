@@ -64,7 +64,8 @@ data = (uint16_t)((16384 + lroundf(speed_rpm * (8191.0f / 1000.0f))) % 16384)
 对应代码实现：
 
 ```c
-static uint16_t generate_crc16(const uint8_t *data, int len) {
+uint16_t generate_crc16(const uint8_t *data, int len)
+{
     int i, j;
     uint16_t crc = 0x496C;
     const uint16_t poly = 0x1021;
