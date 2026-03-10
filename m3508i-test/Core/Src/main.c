@@ -69,7 +69,7 @@ int main(void)
   /* USER CODE BEGIN 1 */
 	int i;
 	uint8_t frame[22];
-	struct m3508i_cmd cmd[4] = {{0, true,}, {0, true,}, {0, true,}, {0, true,}};
+	struct m3508i_cmd cmd[4] = {{0, true}, {0, true}, {0, true}, {0, true}};
 	int led[4] = {GPIO_PIN_3, GPIO_PIN_4, GPIO_PIN_5, GPIO_PIN_6};
   /* USER CODE END 1 */
 
