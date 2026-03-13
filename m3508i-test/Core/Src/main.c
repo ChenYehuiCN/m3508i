@@ -104,9 +104,9 @@ int main(void)
 		  cmd[i / 100].speed_rpm = 100;
 		  HAL_GPIO_WritePin(GPIOA, led[i / 100], GPIO_PIN_RESET);
 		  m3508i_build_frame(&frame, 0, &cmd);
-		  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET);
+		  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET); /* Set RS485 to transmit mode */
 		  HAL_UART_Transmit(&huart4, frame, sizeof(frame), 10);
-		  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_RESET);
+		  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_RESET); /* Set RS485 to receive mode  */
 		  HAL_Delay(10);
 		  cmd[i / 100].speed_rpm = 0;
 		  HAL_GPIO_WritePin(GPIOA, led[i / 100], GPIO_PIN_SET);
