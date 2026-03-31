@@ -69,7 +69,7 @@ int main(void)
   /* USER CODE BEGIN 1 */
 	int i;
 	uint8_t frame[22];
-	struct m3508i_cmd cmd[4] = {{0, true}, {0, true}, {0, true}, {0, true}};
+	struct m3508i_cmd cmd[4] = {{0, false}, {0, false}, {0, false}, {0, false}};
 	int led[4] = {GPIO_PIN_3, GPIO_PIN_4, GPIO_PIN_5, GPIO_PIN_6};
   /* USER CODE END 1 */
 
@@ -101,6 +101,7 @@ int main(void)
   while (1)
   {
 	  for (i = 0; i < 400; i++) {
+		  cmd[i / 100].enable = true;
 		  cmd[i / 100].speed_rpm = 100;
 		  HAL_GPIO_WritePin(GPIOA, led[i / 100], GPIO_PIN_RESET);
 		  m3508i_build_frame(&frame, 0, &cmd);
@@ -108,7 +109,7 @@ int main(void)
 		  HAL_UART_Transmit(&huart4, frame, sizeof(frame), 10);
 		  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_RESET); /* Set RS485 to receive mode  */
 		  HAL_Delay(10);
-		  cmd[i / 100].speed_rpm = 0;
+		  cmd[i / 100].enable = false;
 		  HAL_GPIO_WritePin(GPIOA, led[i / 100], GPIO_PIN_SET);
 	  }
     /* USER CODE END WHILE */

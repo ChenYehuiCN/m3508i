@@ -56,7 +56,7 @@ void m3508i_build_frame(uint8_t (*out_frame)[22], uint8_t responder_id, struct m
 	memcpy(*out_frame, head, sizeof(head));
 	(*out_frame)[7] = responder_id;
 	for (i = 0; i < 4; i++)
-		motor_speed_data[i] = (*motor_cmd)[i].enable ? (16384 + (int)lroundf((*motor_cmd)[i].speed_rpm * 8.191f)) % 16384 : 0x4000;
+		motor_speed_data[i] = (16384 + (int)lroundf((*motor_cmd)[i].speed_rpm * 8.191f)) % 16384 | !(*motor_cmd)[i].enable << 14;
 	memcpy(*out_frame + 8, motor_speed_data, sizeof(motor_speed_data));
 	memset(*out_frame + 16, 0xFF, 4);
 	crc16 = generate_crc16(*out_frame, 20);
