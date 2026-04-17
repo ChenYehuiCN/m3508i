@@ -115,7 +115,7 @@ uint16_t generate_crc16(const uint8_t *data, int len)
 struct m3508i_cmd cmds[4] = {
     { .enable = true, .speed_rpm = 100.0f },   /* ID0 正转 100 rpm */
     { .enable = true, .speed_rpm = -50.0f },   /* ID1 反转 50 rpm */
-    { .enable = false },                       /* ID2 关闭 */
+    { .enable = false },                       /* ID2 禁用 */
     { .enable = true, .speed_rpm = 200.0f }    /* ID3 正转 200 rpm */
 };
 
