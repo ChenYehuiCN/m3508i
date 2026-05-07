@@ -19,13 +19,13 @@ This project presents the results of reverse-engineering the communication proto
 
 Each frame sent from the control board to the motors is **22 bytes** long with the following structure:
 
-| Offset | Length | Content          | Description                                                                 |
-|--------|--------|------------------|-----------------------------------------------------------------------------|
-| 0      | 7      | Frame Header     | Fixed value `0x55 0x16 0x00 0x9D 0xA0 0x00 0x00`                           |
-| 7      | 1      | Responding Motor ID | Specifies which motor should reply to this communication                 |
-| 8      | 8      | Motor Speed Data | 2 bytes per motor (4 motors), little-endian byte order, format described below |
-| 16     | 4      | Padding          | Fixed as `0xFF 0xFF 0xFF 0xFF`                                              |
-| 20     | 2      | CRC16            | Checksum calculated over the first 20 bytes, 16-bit value in little-endian order, algorithm described later |
+| Offset | Length | Content             | Description                                                                                                 |
+|--------|--------|---------------------|-------------------------------------------------------------------------------------------------------------|
+| 0      | 7      | Frame Header        | Fixed value `0x55 0x16 0x00 0x9D 0xA0 0x00 0x00`                                                            |
+| 7      | 1      | Responding Motor ID | Specifies which motor should reply to this communication                                                    |
+| 8      | 8      | Motor Speed Data    | 2 bytes per motor (4 motors), little-endian byte order, format described below                              |
+| 16     | 4      | Padding             | Fixed as `0xFF 0xFF 0xFF 0xFF`                                                                              |
+| 20     | 2      | CRC16               | Checksum calculated over the first 20 bytes, 16-bit value in little-endian order, algorithm described later |
 
 > **Note**: The frame is broadcast, so all motors on the bus immediately update their speed setpoints, but only the motor specified by `Responding Motor ID` will reply with a response packet (the response packet format is not covered in this project).
 
@@ -33,10 +33,10 @@ Each frame sent from the control board to the motors is **22 bytes** long with t
 
 Each motor corresponds to 2 bytes of speed data. The 16-bit structure is defined as follows (stored in little-endian byte order):
 
-| Bit Field | Name         | Description                                                                 |
-|-----------|--------------|-----------------------------------------------------------------------------|
-| bit15     | Reserved     | **Must be 0**                                                               |
-| bit14     | Disable Flag | 1: motor disabled (no torque output); 0: motor enabled                      |
+| Bit Field | Name         | Description                                                                                 |
+|-----------|--------------|---------------------------------------------------------------------------------------------|
+| bit15     | Reserved     | **Must be 0**                                                                               |
+| bit14     | Disable Flag | 1: motor disabled (no torque output); 0: motor enabled                                      |
 | bit13–0   | Speed Code   | 14-bit signed integer (two's complement), representing a linear mapping of the target speed |
 
 The data is generated from the `enable` and `speed_rpm` fields of the `m3508i_cmd` structure:
