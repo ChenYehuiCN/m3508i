@@ -1,4 +1,9 @@
-/* m3508i.c */
+/*
+ * m3508i.c
+ *
+ * Copyright (c) 2026 Chen Yehui
+ * SPDX-License-Identifier: MIT
+ */
 
 #include <stdbool.h>
 #include <stdint.h>

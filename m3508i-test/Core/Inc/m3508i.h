@@ -1,8 +1,8 @@
 /*
  * m3508i.h
  *
- *  Created on: Feb 28, 2026
- *      Author: Chen Yehui
+ * Copyright (c) 2026 Chen Yehui
+ * SPDX-License-Identifier: MIT
  */
 
 #ifndef INC_M3508I_H_

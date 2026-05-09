@@ -1,8 +1,8 @@
 /*
  * m3508i.c
- *
- *  Created on: Feb 28, 2026
- *      Author: Chen Yehui
+ * 
+ * Copyright (c) 2026 Chen Yehui
+ * SPDX-License-Identifier: MIT
  */
 
 #include <stdbool.h>

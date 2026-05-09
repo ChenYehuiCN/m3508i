@@ -1,4 +1,9 @@
-/* m3508i.h */
+/*
+ * m3508i.h
+ *
+ * Copyright (c) 2026 Chen Yehui
+ * SPDX-License-Identifier: MIT
+ */
 
 #ifndef M3508I_H
 #define M3508I_H
