@@ -47,7 +47,12 @@ static uint16_t generate_crc16(const uint8_t *data, int len)
 	return reverse16(crc);
 }
 
-void m3508i_build_frame(uint8_t (*out_frame)[22], uint8_t responder_id, struct m3508i_cmd (*motor_cmd)[4])
+static uint16_t read_u16(const uint8_t *data)
+{
+	return data[0] | (uint16_t)data[1] << 8;
+}
+
+void m3508i_build_frame(uint8_t (*out_frame)[M3508I_COMMAND_FRAME_SIZE], uint8_t responder_id, struct m3508i_cmd (*motor_cmd)[4])
 {
 	int i;
 	uint16_t crc16;
@@ -56,9 +61,23 @@ void m3508i_build_frame(uint8_t (*out_frame)[22], uint8_t responder_id, struct m
 	memcpy(*out_frame, head, sizeof(head));
 	(*out_frame)[7] = responder_id;
 	for (i = 0; i < 4; i++)
-		motor_speed_data[i] = (16384 + (int)lroundf((*motor_cmd)[i].speed_rpm * 8.191f)) % 16384 | !(*motor_cmd)[i].enable << 14;
+		motor_speed_data[i] = (uint16_t)((16384 + (int)lroundf((*motor_cmd)[i].speed_rpm * 8.191f)) % 16384 | !(*motor_cmd)[i].enable << 14);
 	memcpy(*out_frame + 8, motor_speed_data, sizeof(motor_speed_data));
 	memset(*out_frame + 16, 0xFF, 4);
 	crc16 = generate_crc16(*out_frame, 20);
 	memcpy(*out_frame + 20, &crc16, sizeof(crc16));
+}
+
+bool m3508i_parse_frame(struct m3508i_reply *out_reply, uint8_t (*in_frame)[M3508I_REPLY_FRAME_SIZE])
+{
+	if (read_u16((*in_frame) + 30) != generate_crc16((*in_frame), 30))
+		return false;
+	out_reply->motor_id = (*in_frame)[6];
+	out_reply->voltage_v = ((*in_frame)[9] + 3.0f) / 4.0f;
+	out_reply->measured_speed_rpm = (int16_t)read_u16((*in_frame) + 14);
+	out_reply->control_slot = read_u16((*in_frame) + 16);
+	out_reply->enable_state = (*in_frame)[20];
+	out_reply->angle_count = read_u16((*in_frame) + 22);
+	out_reply->sequence = read_u16((*in_frame) + 24);
+	return true;
 }
