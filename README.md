@@ -1,138 +1,177 @@
 [简体中文](README_zh-CN.md)
 
-# m3508i
+# M3508I RS485 Protocol
 
-This project presents the results of reverse-engineering the communication protocol of the **M3508I brushless motor** used in the DJI RoboMaster S1. By capturing RS485 data packets between the control board and the motor, the command frame format was decoded. A C implementation capable of generating compatible data packets is provided. The project includes protocol generation code (`m3508i.c`/`m3508i.h`), an RS485 adapter board hardware design (`rs485-converter/`), and an STM32 example project (`m3508i-test/`), helping developers easily drive the M3508I motor.
+This repository contains a small C implementation of the M3508I motor RS485 protocol, an RS485 adapter design, and an STM32 example.
 
-## Motor Basic Information
+## Protocol Summary
 
-- **Model**: M3508I
-- **Communication Interface**: RS485 (half-duplex)
-- **Baud Rate**: 921600
-- **Power Supply**: 3S LiPo battery (approx. 12V)
-- **ID Range**: 0–3 (up to 4 motors sharing the bus)
-- **Speed Range**: -1000 rpm ~ +1000 rpm
-- **Enable Control**: The `enable` field controls whether the motor outputs torque. When `enable = false`, the motor is disabled and can spin freely without resistance.
-- **Automatic Protection**: If no valid command is received for more than 1 second, the motor automatically enters the disabled state to prevent a runaway machine if control is lost.
+| Item | Value |
+|---|---|
+| Physical layer | RS485 half-duplex |
+| Serial format | 921600 baud, 8 data bits, no parity, 1 stop bit |
+| Motor IDs | 0, 1, 2, 3 |
+| Command frame | 22 bytes |
+| Reply frame | 32 bytes |
+| Angle scale | 32768 counts per mechanical revolution |
 
-## Protocol Format
+Every command frame updates all four motor slots. Byte 7 selects the motor that replies to that frame.
 
-Each frame sent from the control board to the motors is **22 bytes** long with the following structure:
+For a complete four-motor poll, send four frames with responder IDs 0, 1, 2, and 3. With the current ESP32 firmware, RS485 adapter, and 921600 baud configuration, 1333 complete polls per second is the measured reliable limit; 1334 polls per second is not reliable.
 
-| Offset | Length | Content             | Description                                                                                                 |
-|--------|--------|---------------------|-------------------------------------------------------------------------------------------------------------|
-| 0      | 7      | Frame Header        | Fixed value `0x55 0x16 0x00 0x9D 0xA0 0x00 0x00`                                                            |
-| 7      | 1      | Responding Motor ID | Specifies which motor should reply to this communication                                                    |
-| 8      | 8      | Motor Speed Data    | 2 bytes per motor (4 motors), little-endian byte order, format described below                              |
-| 16     | 4      | Padding             | Fixed as `0xFF 0xFF 0xFF 0xFF`                                                                              |
-| 20     | 2      | CRC16               | Checksum calculated over the first 20 bytes, 16-bit value in little-endian order, algorithm described later |
+## Command Frame
 
-> **Note**: The frame is broadcast, so all motors on the bus immediately update their speed setpoints, but only the motor specified by `Responding Motor ID` will reply with a response packet (the response packet format is not covered in this project).
+All multi-byte values are little-endian.
 
-### Speed Data Encoding
+| Offset | Length | Field | Value or meaning |
+|---:|---:|---|---|
+| 0..2 | 3 | Header | `55 16 00` |
+| 3 | 1 | Header | `9D` |
+| 4 | 1 | Header | `A0` |
+| 5..6 | 2 | Header | `00 00` |
+| 7 | 1 | Responder ID | Motor ID 0..3 that must send a reply |
+| 8..9 | 2 | Speed slot 0 | Motor 0 |
+| 10..11 | 2 | Speed slot 1 | Motor 1 |
+| 12..13 | 2 | Speed slot 2 | Motor 2 |
+| 14..15 | 2 | Speed slot 3 | Motor 3 |
+| 16..19 | 4 | Fixed bytes | `FF FF FF FF` |
+| 20..21 | 2 | CRC16 | CRC of bytes 0..19, little-endian |
 
-Each motor corresponds to 2 bytes of speed data. The 16-bit structure is defined as follows (stored in little-endian byte order):
+### Speed Slot
 
-| Bit Field | Name         | Description                                                                                 |
-|-----------|--------------|---------------------------------------------------------------------------------------------|
-| bit15     | Reserved     | **Must be 0**                                                                               |
-| bit14     | Disable Flag | 1: motor disabled (no torque output); 0: motor enabled                                      |
-| bit13–0   | Speed Code   | 14-bit signed integer (two's complement), representing a linear mapping of the target speed |
+The slot is a 16-bit value. Its low 14 bits carry the signed speed code:
 
-The data is generated from the `enable` and `speed_rpm` fields of the `m3508i_cmd` structure:
-
-```c
-struct m3508i_cmd {
-    bool enable;       /* true: enable motor; false: disable motor */
-    float speed_rpm;   /* target speed, range -1000.0 ~ 1000.0 rpm */
-};
+```text
+low14   = slot & 0x3FFF
+signed  = low14 < 0x2000 ? low14 : low14 - 0x4000
+p16_rpm = signed / 8.191
 ```
 
-**Encoding Rules:**
+The high two bits select the motor state:
 
-- **Disable motor** (`enable = false`):  
-  Set bit14 to 1; the lower 14 bits can be arbitrary (the code retains the speed calculation value, but the motor only cares about bit14).  
-  The motor does not output torque and can spin freely.
+| `slot & 0xC000` | State |
+|---:|---|
+| `0x0000` | Enabled |
+| `0x4000` | Disabled, no torque output |
+| `0x8000` or `0xC000` | Enabled; bit 15 alone is not a disable flag |
 
-- **Enable motor** (`enable = true`):  
-  bit14 = 0; the lower 14 bits hold a 14-bit signed integer obtained by linearly mapping the speed:
-  1. Linearly map the speed range `-1000 ~ 1000 rpm` to `-8191 ~ +8191`:
-     ```
-     raw = (int)lroundf(speed_rpm * (8191.0f / 1000.0f))
-     ```
-  2. `raw` is the desired signed value, placed directly into the lower 14 bits as a 14-bit two's complement integer.
-
-**Code Implementation:**
+The normal command encoding used by this project is:
 
 ```c
-uint16_t data = (16384 + (int)lroundf(speed_rpm * 8.191f)) % 16384 | !enable << 14;
+code = (0x4000 + round_away_from_zero(speed_rpm * 8.191)) % 0x4000;
+slot = code | (enable ? 0x0000 : 0x4000);
 ```
 
-### CRC16 Check Algorithm
+The tested command range is -1000 to +1000 rpm. The corresponding endpoint codes are `0x2001` and `0x1FFF`. `0x2000` is a valid enabled slot and decodes as signed code `-8192`. A disabled slot may retain any low-14-bit value; `0x4000` is the usual disabled value.
 
-The checksum uses a custom CRC16-CCITT variant, calculated as follows:
+## Reply Frame
 
-1. Initial value `0x496C`
-2. Polynomial `0x1021` (CCITT standard polynomial)
-3. **Data Preprocessing**: Each byte is **bit-reversed** (`reverse8`) before being processed
-4. **Shift Calculation**: Left-shift method, processing 8 bits at a time
-5. **Result Postprocessing**: The resulting 16-bit value is again **bit-reversed** (`reverse16`)
+All multi-byte values are little-endian. The names `p10`, `p12`, `p14`, `p16`, and `p18` refer to the corresponding byte offsets.
 
-Corresponding code implementation:
+| Offset | Length | Field | Meaning |
+|---:|---:|---|---|
+| 0..2 | 3 | Header | `55 20 00` |
+| 3 | 1 | Constant | `1A` |
+| 4 | 1 | Constant | `A0` |
+| 5 | 1 | Constant | `01` |
+| 6 | 1 | Motor ID | Replying motor, 0..3 |
+| 7 | 1 | Constant | `00` |
+| 8 | 1 | Variable byte | Varies; no protocol meaning is assigned by this library |
+| 9 | 1 | Bus voltage | `voltage_v = (byte9 + 3) / 4`; resolution 0.25 V/count |
+| 10..11 | 2 | p10 | Signed `int16_t` current/torque raw value |
+| 12..13 | 2 | p12 | Raw value from the SPD1078 internal temperature sensor |
+| 14..15 | 2 | p14 | Signed measured speed, approximately 1 rpm/count; frame-to-frame noise is present |
+| 16..17 | 2 | p16 | Echo of the command slot's low 14 bits; decode it with the signed-14-bit rule above |
+| 18..19 | 2 | p18 | Raw value from the temperature sensor attached to the motor coil |
+| 20 | 1 | State | `50` enabled, `90` disabled |
+| 21 | 1 | Constant | `00` |
+| 22..23 | 2 | Absolute angle | 15-bit count, modulo 32768; 32768 counts per revolution |
+| 24..25 | 2 | Sequence | Per-motor reply counter; increments by one and wraps from `FFFF` to `0000` |
+| 26..29 | 4 | Constant | `00 00 00 00` |
+| 30..31 | 2 | CRC16 | CRC of bytes 0..29, little-endian |
+
+p10 is a signed protocol count. Its ampere and torque scales are not part of this library. p12 and p18 are temperature sensor raw counts; this repository does not define a temperature conversion formula.
+
+To calculate speed from angle feedback, unwrap the signed angle difference modulo 32768:
+
+```text
+delta = signed_wrap(angle_new - angle_old, 32768)
+rpm = delta * 60 / (32768 * elapsed_seconds)
+```
+
+This angle-derived speed is smoother than p14 and is suitable for speed or position control.
+
+## CRC16
+
+The CRC variant uses:
+
+- Initial value `0x496C`
+- Polynomial `0x1021`
+- Bit reversal on every input byte
+- Left-shift processing
+- Bit reversal of the final 16-bit result
+- Little-endian storage on the wire
+
+The command CRC covers 20 bytes. The reply CRC covers 30 bytes.
+
+## C API
+
+`m3508i.h` defines the frame sizes, angle scale, command type, reply type, and two functions:
 
 ```c
-uint16_t generate_crc16(const uint8_t *data, int len)
-{
-    int i, j;
-    uint16_t crc = 0x496C;
-    const uint16_t poly = 0x1021;
-    for (i = 0; i < len; i++) {
-        uint8_t byte = reverse8(data[i]);  /* bit reverse */
-        crc ^= (uint16_t)byte << 8;
-        for (j = 0; j < 8; j++) {
-            if (crc & 0x8000)
-                crc = (crc << 1) ^ poly;
-            else
-                crc = crc << 1;
-        }
-    }
-    return reverse16(crc);  /* result bit reverse */
-}
+void m3508i_build_frame(
+    uint8_t (*out_frame)[M3508I_COMMAND_FRAME_SIZE],
+    uint8_t responder_id,
+    struct m3508i_cmd (*motor_cmd)[4]);
+
+bool m3508i_parse_frame(
+    struct m3508i_reply *out_reply,
+    uint8_t (*in_frame)[M3508I_REPLY_FRAME_SIZE]);
 ```
 
-Where `reverse8` and `reverse16` are standard bit-reversal functions. The calculated CRC16 value is finally written to bytes 20 and 21 of the frame in **little-endian** byte order.
-
-## Project Structure
-
-- `m3508i.h` / `m3508i.c`: Core protocol generation code, providing the `m3508i_build_frame` function to construct a complete command frame.
-- `rs485-converter/`: PCB project for an RS485 adapter board used to drive the motor.
-- `m3508i-test/`: STM32-based example project showing how to send commands to control the motor.
-
-## Usage Example
+Example:
 
 ```c
 #include "m3508i.h"
 
-/* Prepare commands for 4 motors */
-struct m3508i_cmd cmds[4] = {
-    { .enable = true, .speed_rpm = 100.0f },   /* ID0 forward 100 rpm */
-    { .enable = true, .speed_rpm = -50.0f },   /* ID1 reverse 50 rpm */
-    { .enable = false },                       /* ID2 disabled */
-    { .enable = true, .speed_rpm = 200.0f }    /* ID3 forward 200 rpm */
+struct m3508i_cmd motors[4] = {
+    { .speed_rpm = 100.0f,  .enable = true  },
+    { .speed_rpm = -50.0f,  .enable = true  },
+    { .speed_rpm = 0.0f,    .enable = false },
+    { .speed_rpm = 200.0f,  .enable = true  },
 };
+uint8_t tx[M3508I_COMMAND_FRAME_SIZE];
+uint8_t rx[M3508I_REPLY_FRAME_SIZE];
+struct m3508i_reply reply;
 
-uint8_t frame[22];
-m3508i_build_frame(&frame, 0, &cmds);  /* Build frame, designate ID0 as the responding motor */
-
-/* Send the frame array (22 bytes) via RS485 */
+m3508i_build_frame(&tx, 0, &motors);
+/* Send all 22 bytes through RS485, then receive 32 bytes. */
+if (m3508i_parse_frame(&reply, &rx)) {
+    /* reply.motor_id, reply.angle_count, reply.sequence, ... */
+}
 ```
 
-After sending, all four motors immediately update their speeds, and the ID0 motor will reply with a response packet.
+`m3508i_parse_frame` verifies the reply CRC and fills the fields exposed by `struct m3508i_reply`. Keep the received 32-byte frame when raw fields such as p10, p12, or p18 are required.
+
+## STM32 Example
+
+The `m3508i-test/` project uses UART4 and the following pins:
+
+| Pin | Function |
+|---|---|
+| PA0-WKUP | UART4_TX to RS485 DI |
+| PA1 | UART4_RX from RS485 RO |
+| PA2 | RS485 transmit/receive direction |
+| PA3..PA6 | Active-low motor 0..3 indicator LEDs |
+
+The example sends one complete command frame, receives the selected motor reply, and repeatedly runs motors 0 through 3 in sequence. Each motor moves two revolutions with a 50 rpm command and angle feedback.
+
+## Repository Layout
+
+- `m3508i.c`, `m3508i.h`: protocol implementation
+- `m3508i-test/`: STM32 example project
+- `rs485-converter/`: RS485 adapter board design
 
 ## License
 
-This project is licensed under the **MIT License**. You are free to use, modify, and distribute the code, provided that the copyright notice is retained. Please be aware that reverse engineering may involve legal risks; ensure compliance with local laws and regulations as well as DJI's relevant terms before using this code.
-
-## Disclaimer
-
-This code is provided for educational and research purposes only. Full compatibility with official equipment is not guaranteed. The project contributors assume no legal liability for any issues arising from the use of this code.
+MIT License. See [LICENSE](LICENSE).
