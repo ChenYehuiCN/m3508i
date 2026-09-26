@@ -40,11 +40,12 @@ The slot is a 16-bit value. Its low 14 bits carry the signed speed code.
 
 The high two bits select the motor state:
 
-| `slot & 0xC000` | State |
-|---:|---|
-| `0x0000` | Enabled |
-| `0x4000` | Disabled, no torque output |
-| `0x8000` or `0xC000` | Enabled; bit 15 alone is not a disable flag |
+| bit15 | bit14 | State |
+|---:|---:|---|
+| 0 | 0 | Enabled |
+| 0 | 1 | Disabled, no torque output |
+| 1 | 0 | Enabled; bit 15 alone is not a disable flag |
+| 1 | 1 | Enabled |
 
 The exact command encoding used by this project is:
 
