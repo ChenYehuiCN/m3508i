@@ -17,7 +17,7 @@ This repository contains a small C implementation of the M3508I motor RS485 prot
 
 This README calls the control-board-to-motor packet the downlink command frame and the motor-to-control-board packet the uplink reply frame. Every command frame updates all four motor slots. Byte 7 selects the motor that replies to that frame.
 
-For a complete four-motor poll, send four frames with responder IDs 0, 1, 2, and 3. With the current ESP32 firmware, RS485 adapter, and 921600 baud configuration, 1333 complete polls per second is the measured reliable limit; 1334 polls per second is not reliable.
+One request/reply transaction consists of one 22-byte downlink command frame and one 32-byte uplink reply. During the frequency test, responder IDs 0, 1, 2, and 3 were sent in rotation. The measured reliable limit was 1333 transactions, or broadcasts, per second; 1334 was not reliable. A complete four-motor poll therefore takes four transactions and runs at about 333.25 polls per second. Each motor's reply rate is about 333.25 Hz, while every command frame still updates all four motor slots.
 
 ## Downlink Command Frame
 
